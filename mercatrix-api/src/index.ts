@@ -1,6 +1,7 @@
 import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
+import cookieParser from 'cookie-parser';
+import { env } from './config/env';
 
 import authRoutes from './routes/auth.routes';
 import adminRoutes from './routes/admin.routes';
@@ -8,14 +9,17 @@ import vendorRoutes from './routes/vendor.routes';
 import customerRoutes from './routes/customer.routes';
 import checkoutRoutes from './routes/checkout.routes';
 import webhooksRoutes from './routes/webhooks.routes';
-
-dotenv.config();
+import { errorHandler } from './middlewares/error.middleware';
 
 const app: Express = express();
-const port = process.env.PORT || 4000;
+const port = env.PORT;
 
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:3000', // Update this based on frontend URL
+  credentials: true,
+}));
 app.use(express.json());
+app.use(cookieParser());
 
 app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'OK', message: 'Mercatrix API is running...' });
@@ -28,6 +32,8 @@ app.use('/api/vendor', vendorRoutes);
 app.use('/api/customer', customerRoutes);
 app.use('/api/checkout', checkoutRoutes);
 app.use('/api/webhooks', webhooksRoutes);
+
+app.use(errorHandler);
 
 app.listen(port, () => {
   console.log(`[server]: Server is running at http://localhost:${port}`);
