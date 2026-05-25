@@ -1,10 +1,10 @@
-generator client {
-  provider = "prisma-client-js"
-}
-
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
 }
 
 enum Role {
@@ -13,203 +13,26 @@ enum Role {
   CUSTOMER
 }
 
-enum PaymentStatus {
-  PENDING
-  SUCCESS
-  FAILED
-  REFUNDED
-}
-
-enum OrderStatus {
-  PENDING
-  PROCESSING
-  SHIPPED
-  DELIVERED
-  CANCELLED
-  CANCELLED_BY_ADMIN
-  RETURN_REQUESTED
-  RETURNED
-}
-
-enum DocumentType {
-  ID_PROOF
-  ADDRESS_PROOF
-  BUSINESS_REGISTRATION
-  TAX_CERTIFICATE
-  OTHER
-}
-
 model User {
   id            String         @id @default(uuid())
   email         String         @unique
-  phone         String?        @unique
   password_hash String
   role          Role           @default(CUSTOMER)
   is_active     Boolean        @default(true)
   created_at    DateTime       @default(now())
   updated_at    DateTime       @updatedAt
-
+  
   vendorProfile VendorProfile?
-  addresses     Address[]
-  carts         CartItem[]
-  orders        Order[]        // Primary orders placed by customer
-  reviews       Review[]
 }
 
 model VendorProfile {
-  id                     String             @id @default(uuid())
-  user_id                String             @unique
-  business_name          String
-  gst_vat_number         String?
-  tax_id                 String?
-  razorpay_account_id    String?            // REQUIRED FOR RAZORPAY ROUTE SPLIT PAYMENTS
-  is_approved            Boolean            @default(false)
-  is_blocked             Boolean            @default(false)
-  block_reason           String?
+  id            String   @id @default(uuid())
+  user_id       String   @unique
+  business_name String
+  phone_number  String?
+  is_approved   Boolean  @default(false)
+  is_blocked    Boolean  @default(false)
+  block_reason  String?
   
-  user                   User               @relation(fields:[user_id], references: [id], onDelete: Cascade)
-  documents              VendorDocument[]
-  products               Product[]
-  subOrders              SubOrder[] 
-}
-
-// 1NF: Removed JSON storage for documents, extracted into a normalized table
-model VendorDocument {
-  id               String        @id @default(uuid())
-  vendor_id        String
-  document_type    DocumentType  @default(OTHER)
-  document_url     String
-  
-  vendor           VendorProfile @relation(fields: [vendor_id], references: [id], onDelete: Cascade)
-}
-
-model Address {
-  id         String  @id @default(uuid())
-  user_id    String
-  street     String
-  city       String
-  state      String
-  zip        String
-  country    String
-  is_default Boolean @default(false)
-
-  user       User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-}
-
-model Category {
-  id              String     @id @default(uuid())
-  name            String
-  parent_id       String?
-  commission_rate Decimal    @db.Decimal(5, 2) @default(10.00) // Explicit precision 
-  
-  parent          Category?  @relation("CategoryHierarchy", fields:[parent_id], references:[id])
-  children        Category[] @relation("CategoryHierarchy")
-  products        Product[]
-}
-
-model Product {
-  id             String           @id @default(uuid())
-  vendor_id      String
-  category_id    String
-  title          String
-  description    String
-  base_price     Decimal          @db.Decimal(10, 2)
-  // 3NF: Removed average_rating as it is a derived/calculated attribute and represents a transitive dependency
-  created_at     DateTime         @default(now())
-
-  vendor         VendorProfile    @relation(fields: [vendor_id], references:[id])
-  category       Category         @relation(fields: [category_id], references: [id])
-  variants       ProductVariant[]
-  images         ProductImage[]
-  reviews        Review[]
-}
-
-model ProductVariant {
-  id             String             @id @default(uuid())
-  product_id     String
-  sku            String             @unique
-  price          Decimal            @db.Decimal(10, 2)
-  stock_quantity Int                @default(0)
-  attributes     Json               // JSONB used for flexible/variable technical specs & dimensions
-
-  product        Product            @relation(fields: [product_id], references: [id], onDelete: Cascade)
-  cartItems      CartItem[]
-  orderItems     OrderItem[]
-}
-
-model ProductImage {
-  id         String  @id @default(uuid())
-  product_id String
-  image_url  String
-  is_primary Boolean @default(false)
-
-  product    Product @relation(fields:[product_id], references: [id], onDelete: Cascade)
-}
-
-model CartItem {
-  id         String         @id @default(uuid())
-  user_id    String
-  variant_id String
-  quantity   Int
-  added_at   DateTime       @default(now())
-
-  user       User           @relation(fields: [user_id], references:[id], onDelete: Cascade)
-  variant    ProductVariant @relation(fields: [variant_id], references:[id], onDelete: Cascade)
-
-  @@unique([user_id, variant_id]) // Prevents duplicate cart entries for the same variant
-}
-
-model Order {
-  id                    String        @id @default(uuid())
-  customer_id           String
-  total_amount          Decimal       @db.Decimal(10,2) // Snapshot stored to avoid anomaly if base price changes
-  platform_shipping_fee Decimal       @db.Decimal(10,2)
-  razorpay_order_id     String?       @unique
-  payment_status        PaymentStatus @default(PENDING)
-  created_at            DateTime      @default(now())
-
-  customer              User          @relation(fields:[customer_id], references: [id])
-  subOrders             SubOrder[]
-}
-
-model SubOrder {
-  id                  String      @id @default(uuid())
-  order_id            String
-  vendor_id           String
-  sub_total           Decimal     @db.Decimal(10, 2) 
-  commission_deducted Decimal     @db.Decimal(10, 2) 
-  status              OrderStatus @default(PENDING)
-  tracking_id         String?
-  delivery_partner    String?
-
-  order               Order         @relation(fields: [order_id], references: [id], onDelete: Cascade)
-  vendor              VendorProfile @relation(fields: [vendor_id], references:[id])
-  orderItems          OrderItem[]
-}
-
-model OrderItem {
-  id                      String         @id @default(uuid())
-  sub_order_id            String
-  variant_id              String
-  quantity                Int
-  price_at_purchase       Decimal        @db.Decimal(10, 2)
-  commission_rate_applied Decimal        @db.Decimal(5, 2)
-
-  subOrder                SubOrder       @relation(fields: [sub_order_id], references: [id], onDelete: Cascade)
-  variant                 ProductVariant @relation(fields: [variant_id], references: [id])
-  reviews                 Review[]       
-}
-
-model Review {
-  id            String     @id @default(uuid())
-  user_id       String
-  product_id    String
-  order_item_id String     @unique // Ensures 1 review per purchased item (Verified Buyer)
-  rating        Int
-  comment       String?
-  created_at    DateTime   @default(now())
-
-  user          User       @relation(fields:[user_id], references: [id], onDelete: Cascade)
-  product       Product    @relation(fields: [product_id], references: [id], onDelete: Cascade)
-  orderItem     OrderItem  @relation(fields: [order_item_id], references: [id])
+  user          User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
 }
